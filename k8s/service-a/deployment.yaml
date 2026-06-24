@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: job-submitter
+  namespace: jobs
+  labels:
+    app: job-submitter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: job-submitter
+  template:
+    metadata:
+      labels:
+        app: job-submitter
+      annotations:
+        # Annotation-based scraping as a fallback in case ServiceMonitor
+        # is not picked up. kube-prometheus-stack honours these too.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: job-submitter
+          image: job-submitter:latest
+
+          # imagePullPolicy: Never tells Kubernetes to use the image already
+          # present in the node's Docker daemon. Required when images are
+          # loaded via `eval $(minikube docker-env)` rather than a registry.
+          imagePullPolicy: Never
+
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+
+          env:
+            - name: REDIS_ADDR
+              value: "redis:6379"
+            - name: PORT
+              value: "8080"
+
+          resources:
+            requests:
+              # 100m CPU is the baseline used by HPA for this pod.
+              # Service A is not the scaled service — it stays at 1 replica.
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "300m"
+              memory: "256Mi"
+
+          # /healthz: always 200 if process is alive (does not check Redis).
+          # Kubernetes restarts the pod if this fails — process crash only.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+
+          # /readyz: returns 503 if Redis is unreachable.
+          # Kubernetes removes pod from Service endpoints while unhealthy,
+          # so no traffic is routed to a pod that can't reach Redis.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+
+      # Ensure job-submitter starts after Redis is available.
+      # initContainers block until they exit 0 — this one polls Redis PING.
+      initContainers:
+        - name: wait-for-redis
+          image: redis:7-alpine
+          command:
+            - sh
+            - -c
+            - |
+              until redis-cli -h redis -p 6379 ping | grep -q PONG; do
+                echo "waiting for redis..."; sleep 2;
+              done
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "16Mi"
+            limits:
+              cpu: "50m"
+              memory: "32Mi"

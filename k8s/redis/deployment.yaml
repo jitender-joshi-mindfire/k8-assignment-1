@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: jobs
+  labels:
+    app: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+              name: redis
+
+          # Redis doesn't need much under normal load.
+          # Requests define the guaranteed allocation; limits cap the ceiling.
+          # Limits are generous — during queue build-up Redis holds many job
+          # hash keys in memory, so we give it room.
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+
+          # Pass the maxmemory policy so Redis evicts LRU keys rather than
+          # returning errors when it hits the memory limit. For this assignment
+          # (job results are short-lived) allkeys-lru is acceptable.
+          args:
+            - redis-server
+            - --maxmemory
+            - "200mb"
+            - --maxmemory-policy
+            - allkeys-lru
+
+          # Redis stores its data in /data by default. We use an emptyDir
+          # (ephemeral) volume — acceptable for this assignment because job
+          # data is transient. In production use a PersistentVolumeClaim.
+          volumeMounts:
+            - name: data
+              mountPath: /data
+
+          # Liveness: if Redis stops responding to PING, restart the pod.
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+
+          # Readiness: remove from endpoints until Redis is accepting commands.
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+
+      volumes:
+        - name: data
+          emptyDir: {}

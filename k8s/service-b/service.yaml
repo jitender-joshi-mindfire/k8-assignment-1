@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker
+  namespace: jobs
+  labels:
+    app: worker
+spec:
+  type: ClusterIP
+  selector:
+    app: worker
+  ports:
+    # Port name "metrics" is required. The ServiceMonitor in Phase 6 uses
+    # port: metrics to tell Prometheus which endpoint to scrape. If the name
+    # is missing or different, ServiceMonitor matching will silently fail.
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+      protocol: TCP

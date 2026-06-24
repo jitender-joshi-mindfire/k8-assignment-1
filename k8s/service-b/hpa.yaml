@@ -1,0 +1,44 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: worker
+  namespace: jobs
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: worker
+
+  minReplicas: 2
+  maxReplicas: 10
+
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          # Scale up when average CPU across all worker pods exceeds 70% of
+          # their requested 200m (= 140m per pod).
+          # During stress testing (ab -n 5000 -c 200) the queue fills up faster
+          # than workers drain it. Each worker runs prime/bcrypt/sort jobs that
+          # peg CPU near 1000m. HPA observes ~500% utilization and scales 2→10.
+          averageUtilization: 70
+
+  behavior:
+    scaleUp:
+      # Short window so we can observe the scale-up event quickly during demos.
+      # In production this would be 60–300s to avoid thrashing on transient spikes.
+      stabilizationWindowSeconds: 15
+      policies:
+        - type: Pods
+          value: 4
+          periodSeconds: 15
+    scaleDown:
+      # Longer window so we can observe pods still running after ab finishes.
+      # This gives time to take Grafana screenshots before pods scale back.
+      stabilizationWindowSeconds: 120
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60

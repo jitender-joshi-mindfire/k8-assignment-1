@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: jobs
+  labels:
+    # This label is required by kube-prometheus-stack's ServiceMonitor
+    # namespace selector. Without it, Prometheus won't discover
+    # ServiceMonitors created in this namespace.
+    kubernetes.io/metadata.name: jobs

@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stats-aggregator
+  namespace: jobs
+  labels:
+    app: stats-aggregator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: stats-aggregator
+  template:
+    metadata:
+      labels:
+        app: stats-aggregator
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8081"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: stats-aggregator
+          image: stats-aggregator:latest
+          imagePullPolicy: Never
+
+          ports:
+            - name: http
+              containerPort: 8081
+              protocol: TCP
+
+          env:
+            - name: REDIS_ADDR
+              value: "redis:6379"
+            - name: PORT
+              value: "8081"
+            # Poll Redis every 5 seconds for live stats.
+            # Shorter than the default 15s so the Grafana dashboard reflects
+            # queue depth changes quickly during stress testing.
+            - name: COLLECT_INTERVAL_SECS
+              value: "5"
+
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+
+      initContainers:
+        - name: wait-for-redis
+          image: redis:7-alpine
+          command:
+            - sh
+            - -c
+            - |
+              until redis-cli -h redis -p 6379 ping | grep -q PONG; do
+                echo "waiting for redis..."; sleep 2;
+              done
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "16Mi"
+            limits:
+              cpu: "50m"
+              memory: "32Mi"

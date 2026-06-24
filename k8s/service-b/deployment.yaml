@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: jobs
+  labels:
+    app: worker
+spec:
+  # replicas: 2 matches HPA minReplicas. HPA takes ownership of replica count
+  # once deployed — do not manually scale while HPA is active.
+  replicas: 2
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: worker
+          image: worker:latest
+          imagePullPolicy: Never
+
+          ports:
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+
+          env:
+            - name: REDIS_ADDR
+              value: "redis:6379"
+            - name: METRICS_PORT
+              value: "9090"
+
+          resources:
+            requests:
+              # cpu: "200m" is the baseline for HPA calculations.
+              # HPA averageUtilization: 70 → scale up when cpu > 140m (70% of 200m).
+              # This must be set; without it HPA reports TARGETS as <unknown>.
+              cpu: "200m"
+              memory: "128Mi"
+            limits:
+              # 1000m = 1 vCPU. Prime sieve and bcrypt are CPU-bound and will
+              # spike close to this limit, which is exactly what we want to
+              # trigger the HPA scale-up during stress testing.
+              cpu: "1000m"
+              memory: "512Mi"
+
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 9090
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 9090
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+
+      # terminationGracePeriodSeconds must be longer than the longest possible
+      # job (bcrypt cost=14 ≈ 2s, prime 10M ≈ 150ms, sort 500k ≈ 50ms) PLUS
+      # the BRPOP timeout (5s). 60 seconds gives plenty of headroom.
+      terminationGracePeriodSeconds: 60
+
+      initContainers:
+        - name: wait-for-redis
+          image: redis:7-alpine
+          command:
+            - sh
+            - -c
+            - |
+              until redis-cli -h redis -p 6379 ping | grep -q PONG; do
+                echo "waiting for redis..."; sleep 2;
+              done
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "16Mi"
+            limits:
+              cpu: "50m"
+              memory: "32Mi"

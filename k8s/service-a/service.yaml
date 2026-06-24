@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: job-submitter
+  namespace: jobs
+  labels:
+    app: job-submitter
+spec:
+  type: ClusterIP
+  selector:
+    app: job-submitter
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
