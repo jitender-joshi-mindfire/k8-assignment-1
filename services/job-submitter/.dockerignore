@@ -1,0 +1,25 @@
+# Send only what the builder stage needs. Everything else is excluded so Docker
+# doesn't ship editor configs, test artifacts, or local binaries into the daemon.
+
+# compiled binary (if someone ran go build locally — we rebuild inside Docker)
+job-submitter
+
+# test files — not needed in the image
+*_test.go
+testdata/
+
+# editor & OS noise
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~
+
+# logs & temp
+*.log
+*.tmp
+*.bak
+
+# Dockerfile itself is not needed inside the build context
+Dockerfile
+.dockerignore

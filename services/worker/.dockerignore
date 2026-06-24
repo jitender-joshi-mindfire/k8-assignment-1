@@ -1,0 +1,13 @@
+worker
+*_test.go
+testdata/
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~
+*.log
+*.tmp
+*.bak
+Dockerfile
+.dockerignore

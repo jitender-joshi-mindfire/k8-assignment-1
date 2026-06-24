@@ -97,8 +97,8 @@ yarn-error.log*
 .cache/
 
 # ── Docker & Container artifacts ────────────────────────────────────────
-# Docker build outputs
-.dockerignore
+# .dockerignore files SHOULD be tracked — they're part of the build definition
+# docker-compose.override.yml is local-only config
 docker-compose.override.yml
 
 # ── Test coverage & benchmarks ──────────────────────────────────────────
@@ -151,6 +151,7 @@ kind-config.yaml
 # Generated code (mocks, etc.)
 *_mock.go
 *_gen.go
+IMPLEMENTATION_PLAN.md
 
 # ============================================================================
 #                        ✓ THINGS TO TRACK
