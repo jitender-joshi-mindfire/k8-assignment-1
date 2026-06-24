@@ -1,0 +1,23 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: stats-monitor
+  namespace: jobs
+  labels:
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: stats-aggregator
+  namespaceSelector:
+    matchNames:
+      - jobs
+  endpoints:
+    - port: http          # matches the portName in k8s/service-c/service.yaml
+      path: /metrics
+      interval: 15s
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: pod
+        - sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: namespace

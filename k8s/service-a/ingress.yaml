@@ -4,28 +4,26 @@ metadata:
   name: job-submitter
   namespace: jobs
   annotations:
-    # Strip the path prefix before forwarding to the backend.
-    # Without this, /submit goes to the pod as /submit — which is correct.
-    # Added explicitly so nginx doesn't rewrite to /.
-    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    # Simple prefix rewrite: strip the matched prefix and pass the rest.
+    # /submit   → pod receives /submit
+    # /status/… → pod receives /status/…
+    nginx.ingress.kubernetes.io/use-regex: "true"
 spec:
   ingressClassName: nginx
   rules:
     - host: jobs.local
       http:
         paths:
-          # Match /submit and /submit/... — the rewrite-target /$2 preserves
-          # everything after the prefix (empty for /submit, so pod receives /submit).
-          - path: /submit(/|$)(.*)
-            pathType: ImplementationSpecific
+          - path: /submit
+            pathType: Prefix
             backend:
               service:
                 name: job-submitter
                 port:
                   number: 8080
 
-          - path: /status(/|$)(.*)
-            pathType: ImplementationSpecific
+          - path: /status
+            pathType: Prefix
             backend:
               service:
                 name: job-submitter

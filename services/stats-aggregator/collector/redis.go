@@ -184,35 +184,43 @@ func collect(ctx context.Context, rdb *redis.Client, store *Store, m *metrics.Me
 			break
 		}
 
-		// Process each key in this batch.
-		for _, key := range keys {
-			totalSubmitted++
+		if len(keys) == 0 {
+			continue
+		}
+		totalSubmitted += int64(len(keys))
 
-			// HGETALL returns all field-value pairs for the hash.
-			fields, err := rdb.HGetAll(ctx, key).Result()
-			if err != nil {
-				slog.Warn("collector: HGETALL failed", "key", key, "err", err)
+		// Pipeline all HMGETs in one round-trip instead of N individual HGETALLs.
+		// Under load (5000 keys) this reduces N RTTs to 1 per SCAN batch,
+		// preventing the per-command timeout that causes nil pointer panics
+		// in go-redis when the connection pool is exhausted.
+		pipe := rdb.Pipeline()
+		statusCmds := make([]*redis.SliceCmd, len(keys))
+		for i, key := range keys {
+			statusCmds[i] = pipe.HMGet(ctx, key, "status", "duration_ms")
+		}
+		if _, err := pipe.Exec(ctx); err != nil && err != redis.Nil {
+			slog.Warn("collector: pipeline exec failed", "err", err)
+			continue
+		}
+
+		for _, cmd := range statusCmds {
+			vals, err := cmd.Result()
+			if err != nil || len(vals) < 2 {
 				continue
 			}
-
-			switch fields["status"] {
+			status, _ := vals[0].(string)
+			switch status {
 			case "done":
 				totalCompleted++
-				// Parse duration_ms stored by the worker.
-				// Not all done jobs have duration_ms (e.g. jobs processed before
-				// we added that field), so we use the ok pattern.
-				if dms, ok := fields["duration_ms"]; ok {
+				if dms, ok := vals[1].(string); ok && dms != "" {
 					if ms, err := strconv.ParseInt(dms, 10, 64); err == nil {
-						durationSum += float64(ms) / 1000.0 // convert ms → seconds
+						durationSum += float64(ms) / 1000.0
 						durationCount++
 					}
 				}
 			case "error":
 				totalErrors++
 			}
-			// "pending" and "processing" are implicitly counted in totalSubmitted
-			// but not in completed/errors. The in-flight count is:
-			//   totalSubmitted - totalCompleted - totalErrors
 		}
 
 		// cursor == 0 means SCAN has returned to the beginning — full iteration done.

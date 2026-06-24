@@ -1,0 +1,128 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: job-queue-dashboard
+  namespace: monitoring
+  labels:
+    # The grafana sidecar container watches for ConfigMaps with this label
+    # and automatically injects the JSON into Grafana at runtime.
+    # No Grafana restart required — sidecar picks it up within ~30 seconds.
+    grafana_dashboard: "1"
+data:
+  # Key name must end in .json — grafana sidecar uses the file extension
+  # to decide whether to import it as a dashboard.
+  job-queue-autoscale.json: |-
+    {
+      "__inputs": [],
+      "__requires": [
+        { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0" },
+        { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" }
+      ],
+      "annotations": { "list": [] },
+      "description": "Kubernetes Job Queue — worker autoscaling, job throughput, queue depth, and processing latency",
+      "editable": true,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "panels": [
+        {
+          "id": 1, "title": "Worker Pod Count (current)", "type": "stat",
+          "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null }, { "color": "yellow", "value": 5 }, { "color": "red", "value": 9 } ] }, "unit": "short", "min": 0, "max": 10 } },
+          "targets": [ { "datasource": { "type": "prometheus" }, "expr": "kube_deployment_status_replicas_ready{namespace=\"jobs\",deployment=\"worker\"}", "legendFormat": "ready pods", "instant": true } ]
+        },
+        {
+          "id": 2, "title": "HPA Replica Target vs Current", "type": "timeseries",
+          "gridPos": { "x": 4, "y": 0, "w": 10, "h": 4 },
+          "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+          "fieldConfig": { "defaults": { "unit": "short", "min": 0, "max": 12 } },
+          "targets": [
+            { "datasource": { "type": "prometheus" }, "expr": "kube_horizontalpodautoscaler_status_current_replicas{namespace=\"jobs\",horizontalpodautoscaler=\"worker\"}", "legendFormat": "current replicas" },
+            { "datasource": { "type": "prometheus" }, "expr": "kube_horizontalpodautoscaler_status_desired_replicas{namespace=\"jobs\",horizontalpodautoscaler=\"worker\"}", "legendFormat": "desired replicas" },
+            { "datasource": { "type": "prometheus" }, "expr": "kube_horizontalpodautoscaler_spec_max_replicas{namespace=\"jobs\",horizontalpodautoscaler=\"worker\"}", "legendFormat": "max replicas" }
+          ]
+        },
+        {
+          "id": 3, "title": "Queue Length", "type": "stat",
+          "gridPos": { "x": 14, "y": 0, "w": 4, "h": 4 },
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 50 }, { "color": "red", "value": 200 } ] }, "unit": "short" } },
+          "targets": [ { "datasource": { "type": "prometheus" }, "expr": "statsaggregator_queue_length", "legendFormat": "queue depth", "instant": true } ]
+        },
+        {
+          "id": 4, "title": "In-Flight Jobs", "type": "stat",
+          "gridPos": { "x": 18, "y": 0, "w": 4, "h": 4 },
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null }, { "color": "green", "value": 1 } ] }, "unit": "short" } },
+          "targets": [ { "datasource": { "type": "prometheus" }, "expr": "worker_active_jobs", "legendFormat": "active jobs", "instant": true } ]
+        },
+        {
+          "id": 5, "title": "CPU Usage per Worker Pod (millicores)", "type": "timeseries",
+          "gridPos": { "x": 0, "y": 4, "w": 12, "h": 7 },
+          "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+          "fieldConfig": { "defaults": { "unit": "short", "custom": { "lineWidth": 1.5, "fillOpacity": 10 } } },
+          "targets": [ { "datasource": { "type": "prometheus" }, "expr": "rate(container_cpu_usage_seconds_total{namespace=\"jobs\",pod=~\"worker-.*\",container=\"worker\"}[1m]) * 1000", "legendFormat": "{{pod}}" } ]
+        },
+        {
+          "id": 6, "title": "Memory per Worker Pod (MiB)", "type": "timeseries",
+          "gridPos": { "x": 12, "y": 4, "w": 10, "h": 7 },
+          "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+          "fieldConfig": { "defaults": { "unit": "decmbytes", "custom": { "lineWidth": 1.5, "fillOpacity": 10 } } },
+          "targets": [ { "datasource": { "type": "prometheus" }, "expr": "container_memory_working_set_bytes{namespace=\"jobs\",pod=~\"worker-.*\",container=\"worker\"} / 1024 / 1024", "legendFormat": "{{pod}}" } ]
+        },
+        {
+          "id": 7, "title": "Jobs Processed Rate (per second, by type)", "type": "timeseries",
+          "gridPos": { "x": 0, "y": 11, "w": 12, "h": 7 },
+          "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+          "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "lineWidth": 2, "fillOpacity": 15 } } },
+          "targets": [
+            { "datasource": { "type": "prometheus" }, "expr": "sum by(type) (rate(worker_jobs_processed_total{status=\"success\"}[1m]))", "legendFormat": "{{type}}" },
+            { "datasource": { "type": "prometheus" }, "expr": "sum(rate(worker_jobs_processed_total{status=\"success\"}[1m]))", "legendFormat": "total" }
+          ]
+        },
+        {
+          "id": 8, "title": "Job Processing Time — P99 & P50 (seconds)", "type": "timeseries",
+          "gridPos": { "x": 12, "y": 11, "w": 10, "h": 7 },
+          "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+          "fieldConfig": { "defaults": { "unit": "s", "custom": { "lineWidth": 2 } } },
+          "targets": [
+            { "datasource": { "type": "prometheus" }, "expr": "histogram_quantile(0.99, sum by(le,type) (rate(worker_job_processing_time_seconds_bucket[5m])))", "legendFormat": "p99 {{type}}" },
+            { "datasource": { "type": "prometheus" }, "expr": "histogram_quantile(0.50, sum by(le,type) (rate(worker_job_processing_time_seconds_bucket[5m])))", "legendFormat": "p50 {{type}}" }
+          ]
+        },
+        {
+          "id": 9, "title": "Total Jobs — Submitted vs Completed", "type": "timeseries",
+          "gridPos": { "x": 0, "y": 18, "w": 12, "h": 6 },
+          "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+          "fieldConfig": { "defaults": { "unit": "short" } },
+          "targets": [
+            { "datasource": { "type": "prometheus" }, "expr": "statsaggregator_total_jobs_submitted", "legendFormat": "submitted" },
+            { "datasource": { "type": "prometheus" }, "expr": "statsaggregator_total_jobs_completed", "legendFormat": "completed" },
+            { "datasource": { "type": "prometheus" }, "expr": "statsaggregator_total_job_errors", "legendFormat": "errors" }
+          ]
+        },
+        {
+          "id": 10, "title": "Job Error Rate (per second)", "type": "timeseries",
+          "gridPos": { "x": 12, "y": 18, "w": 10, "h": 6 },
+          "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+          "fieldConfig": { "defaults": { "unit": "reqps", "color": { "fixedColor": "red", "mode": "fixed" }, "custom": { "lineWidth": 2, "fillOpacity": 20 } } },
+          "targets": [ { "datasource": { "type": "prometheus" }, "expr": "sum by(type) (rate(worker_job_errors_total[1m]))", "legendFormat": "errors {{type}}" } ]
+        },
+        {
+          "id": 11, "title": "Avg Processing Time (seconds)", "type": "gauge",
+          "gridPos": { "x": 0, "y": 24, "w": 6, "h": 5 },
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "showThresholdMarkers": true },
+          "fieldConfig": { "defaults": { "unit": "s", "min": 0, "max": 10, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 2 }, { "color": "red", "value": 5 } ] } } },
+          "targets": [ { "datasource": { "type": "prometheus" }, "expr": "statsaggregator_avg_processing_time_seconds", "legendFormat": "avg processing time", "instant": true } ]
+        }
+      ],
+      "refresh": "10s",
+      "schemaVersion": 38,
+      "tags": ["kubernetes", "jobs", "autoscaling"],
+      "time": { "from": "now-30m", "to": "now" },
+      "timezone": "browser",
+      "title": "Job Queue — Worker Autoscaling",
+      "uid": "job-queue-autoscale",
+      "version": 1
+    }

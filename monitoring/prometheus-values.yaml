@@ -1,0 +1,59 @@
+grafana:
+  adminPassword: admin123
+
+  # Enable the sidecar so Grafana watches for ConfigMaps labelled
+  # grafana_dashboard: "1" across all namespaces and auto-loads them.
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      # Search all namespaces for dashboard ConfigMaps, not just monitoring.
+      searchNamespace: ALL
+
+prometheus:
+  prometheusSpec:
+    # Allow Prometheus to pick up ServiceMonitors from ALL namespaces,
+    # not just the one the Helm release lives in. Without this flag,
+    # ServiceMonitors in the 'jobs' namespace are silently ignored.
+    serviceMonitorSelectorNilUsesHelmValues: false
+
+    # Scrape interval — every 15s balances freshness vs cardinality.
+    scrapeInterval: 15s
+    evaluationInterval: 15s
+
+    # Retain 15 days of metrics on disk (adequate for assignment demo).
+    retention: 15d
+
+    # Give Prometheus enough memory to handle job metric series.
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+
+alertmanager:
+  # Disable alertmanager — not needed for this assignment.
+  enabled: false
+
+# Reduce kube-state-metrics resource footprint in Minikube.
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
+# Reduce node-exporter resource footprint.
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi

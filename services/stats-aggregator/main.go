@@ -66,8 +66,12 @@ func main() {
 
 	// ── Redis client ───────────────────────────────────────────────────────────
 	rdb := redis.NewClient(&redis.Options{
-		Addr:        redisAddr,
-		DialTimeout: 10 * time.Second,
+		Addr:         redisAddr,
+		DialTimeout:  10 * time.Second,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 5 * time.Second,
+		PoolSize:     10,
+		MinIdleConns: 2,
 	})
 
 	pingCtx, pingCancel := context.WithTimeout(context.Background(), 10*time.Second)

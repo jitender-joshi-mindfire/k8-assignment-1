@@ -1,0 +1,28 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: worker-monitor
+  namespace: jobs
+  labels:
+    # This label must match the kube-prometheus-stack Helm release name.
+    # Prometheus uses it to decide which ServiceMonitors to honour.
+    # If this label is wrong, Prometheus never discovers this target.
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: worker
+  namespaceSelector:
+    matchNames:
+      - jobs
+  endpoints:
+    - port: metrics       # matches the portName in k8s/service-b/service.yaml
+      path: /metrics
+      interval: 15s
+      # Relabel target so the Prometheus target label includes the pod name,
+      # making it possible to graph per-replica metrics in Grafana.
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: pod
+        - sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: namespace
