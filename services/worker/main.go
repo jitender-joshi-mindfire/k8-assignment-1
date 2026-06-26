@@ -53,10 +53,12 @@ func main() {
 
 	// ── Redis client ───────────────────────────────────────────────────────────
 	rdb := redis.NewClient(&redis.Options{
-		Addr: redisAddr,
-		// DialTimeout is set explicitly: if Redis is unreachable at startup
-		// we want a fast fail rather than hanging for 30+ seconds.
-		DialTimeout: 10 * time.Second,
+		Addr:         redisAddr,
+		DialTimeout:  10 * time.Second,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 5 * time.Second,
+		PoolSize:     5,
+		MinIdleConns: 1,
 	})
 
 	pingCtx, pingCancel := context.WithTimeout(context.Background(), 10*time.Second)

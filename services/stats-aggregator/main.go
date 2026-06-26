@@ -29,9 +29,10 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/kubernetes-project/stats-aggregator/collector"
 	"github.com/kubernetes-project/stats-aggregator/handler"
+	apimw "github.com/kubernetes-project/stats-aggregator/middleware"
 	"github.com/kubernetes-project/stats-aggregator/metrics"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
@@ -106,11 +107,12 @@ func main() {
 	// ── HTTP router ────────────────────────────────────────────────────────────
 	r := chi.NewRouter()
 
-	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(10 * time.Second))
+	r.Use(chimw.RequestID)
+	r.Use(chimw.RealIP)
+	r.Use(chimw.Logger)
+	r.Use(chimw.Recoverer)
+	r.Use(chimw.Timeout(10 * time.Second))
+	r.Use(apimw.RateLimit(100, time.Minute))
 
 	// GET /stats — the primary endpoint for this service.
 	// Returns a JSON snapshot of current system state read from the in-memory

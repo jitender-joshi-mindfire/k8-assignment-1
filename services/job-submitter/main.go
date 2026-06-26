@@ -21,8 +21,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/kubernetes-project/job-submitter/handler"
+	apimw "github.com/kubernetes-project/job-submitter/middleware"
 	"github.com/kubernetes-project/job-submitter/metrics"
 	"github.com/kubernetes-project/job-submitter/queue"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -51,9 +52,12 @@ func main() {
 	// connection at startup so the pod fails fast (and Kubernetes restarts it)
 	// rather than silently accepting requests that will all fail.
 	rdb := redis.NewClient(&redis.Options{
-		Addr: redisAddr,
-		// DialTimeout / ReadTimeout / WriteTimeout are left at defaults (5s / 3s / 3s).
-		// These are generous for a local Redis instance; production would tune them.
+		Addr:         redisAddr,
+		DialTimeout:  10 * time.Second,
+		ReadTimeout:  3 * time.Second,
+		WriteTimeout: 3 * time.Second,
+		PoolSize:     10,
+		MinIdleConns: 2,
 	})
 
 	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -76,23 +80,25 @@ func main() {
 
 	// RequestID: adds a unique X-Request-ID to every request. Useful when
 	//   correlating logs across Service A → B → C in a distributed trace.
-	r.Use(middleware.RequestID)
+	r.Use(chimw.RequestID)
 
 	// RealIP: reads X-Forwarded-For / X-Real-IP so logs show the client IP,
 	//   not the ingress controller's IP.
-	r.Use(middleware.RealIP)
+	r.Use(chimw.RealIP)
 
 	// Logger: emits one structured log line per request with method, path,
 	//   status, latency. This is the first line of defence for debugging.
-	r.Use(middleware.Logger)
+	r.Use(chimw.Logger)
 
 	// Recoverer: catches any panic in a handler and returns 500 instead of
 	//   crashing the whole process. Essential in production.
-	r.Use(middleware.Recoverer)
+	r.Use(chimw.Recoverer)
 
 	// Timeout: enforces a 30-second request deadline. Without this, a slow
 	//   Redis call could hold a goroutine open indefinitely under load.
-	r.Use(middleware.Timeout(30 * time.Second))
+	r.Use(chimw.Timeout(30 * time.Second))
+	r.Use(apimw.CORS)
+	r.Use(apimw.RateLimit(200, time.Minute))
 
 	// ── routes ───────────────────────────────────────────────────────────────
 	r.Post("/submit", handler.Submit(rdb, m))
@@ -158,7 +164,7 @@ func main() {
 		Addr:         ":" + port,
 		Handler:      r,
 		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 35 * time.Second, // must be > middleware.Timeout (30s)
+		WriteTimeout: 35 * time.Second, // must be > chimw.Timeout (30s)
 		IdleTimeout:  60 * time.Second,
 	}
 
