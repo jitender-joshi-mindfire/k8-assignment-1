@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -33,8 +34,10 @@ func Status(rdb *redis.Client, m *metrics.Metrics) http.HandlerFunc {
 
 		jobStatus, err := queue.GetJobStatus(r.Context(), rdb, id)
 		if err != nil {
+			// Log the internal error but do not surface Redis details to the caller.
+			slog.ErrorContext(r.Context(), "GetJobStatus failed", "id", id, "err", err)
 			writeJSON(w, http.StatusBadGateway, errorResponse{
-				Error: "failed to query job status: " + err.Error(),
+				Error: "upstream error retrieving job status",
 			})
 			m.HTTPRequestsTotal.WithLabelValues(r.Method, "/status/{id}", "5xx").Inc()
 			return
